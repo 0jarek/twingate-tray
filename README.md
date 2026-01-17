@@ -1,6 +1,6 @@
-# Twingate Tray (Linux)
+# Twingate Tray (Linux Mint)
 
-A lightweight **system tray application** for Linux (Mint / Ubuntu / Debian)  
+A lightweight **system tray application** for Linux (Mint)  
 that provides **GUI control over Twingate CLI** and **resource authentication**
 without relying on the terminal.
 
