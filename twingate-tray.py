@@ -3,15 +3,25 @@ import gi
 import subprocess
 import shutil
 import sys
+import re
+import webbrowser
 
 
 gi.require_version("Gtk", "3.0")
+gi.require_version("Gdk", "3.0")
 gi.require_version("AppIndicator3", "0.1")
 
-from gi.repository import Gtk, AppIndicator3, GLib
+from gi.repository import Gdk, Gtk, AppIndicator3, GLib
+
+# AUTH handling mode:
+# 0 = do nothing (just trigger twingate auth)
+# 1 = open auth URL in default browser automatically
+# 2 = show GUI window with clickable + copyable auth URL
+AUTH_MODE = 2
+DEBUG_LOG = False
 
 APP_ID = "twingate-tray"
-app_ver = "0.2"
+app_ver = "0.3"
 app_name = f"Twingate Tray v{app_ver}"
 
 last_status = None
@@ -19,15 +29,79 @@ status_window = None
 resource_menu_items = []
 
 
+def debug_log(msg):
+    if DEBUG_LOG:
+        print(msg)
+
+def extract_auth_url(text):
+    """
+    Extract HTTPS URL from a line of text.
+    """
+    match = re.search(r"https://\S+", text)
+    if match:
+        url = match.group(0)
+        debug_log(f"[AUTH:URL:FOUND] {url}")
+        return url
+
+    debug_log("[AUTH:URL:NOT_FOUND] no URL in line")
+
+    return None
+
+
 # ==================================================
 # CLI helpers
 # ==================================================
+
 
 def check_twingate_available_or_exit():
     if shutil.which("twingate") is None:
         print("ERROR: twingate binary not found in PATH", file=sys.stderr)
         sys.exit(1)
 
+def show_auth_url_window(resource_name, url):
+    """
+    Show GTK window with authentication URL.
+    Provides buttons to copy or open the URL.
+    """
+
+    win = Gtk.Window(title=f"Twingate Auth – {resource_name}")
+    win.set_default_size(700, 180)
+    win.set_border_width(10)
+
+    vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+
+    label = Gtk.Label(label="Additional authentication is required.")
+    label.set_xalign(0)
+
+    entry = Gtk.Entry()
+    entry.set_text(url)
+    entry.set_editable(False)
+    entry.set_can_focus(True)
+
+    # Buttons container
+    hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+
+    btn_copy = Gtk.Button(label="Copy URL")
+    btn_copy.connect(
+        "clicked",
+        lambda _: Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD).set_text(url, -1)
+    )
+
+    btn_open = Gtk.Button(label="Open URL")
+    btn_open.connect(
+        "clicked",
+        lambda _: webbrowser.open(url)
+    )
+
+    hbox.pack_start(btn_copy, False, False, 0)
+    hbox.pack_start(btn_open, False, False, 0)
+
+    vbox.pack_start(label, False, False, 0)
+    vbox.pack_start(entry, False, False, 0)
+    vbox.pack_start(hbox, False, False, 0)
+
+    win.add(vbox)
+    win.show_all()
 
 def run_cmd(cmd):
     try:
@@ -114,8 +188,55 @@ def disconnect_root(_=None):
     subprocess.Popen(["pkexec", "twingate", "disconnect"])
 
 
+
 def auth_resource(resource_name):
-    subprocess.Popen(["twingate", "auth", resource_name])
+    """
+    Trigger Twingate auth and handle authentication URL using GLib I/O watches.
+    No threading, GTK-native implementation.
+    """
+
+    try:
+        proc = subprocess.Popen(
+            ["twingate", "auth", resource_name],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+
+        url_handled = {"done": False}
+
+        def on_io_ready(stream, _condition):
+            line = stream.readline()
+            if not line:
+                return False
+
+            debug_log(f"[AUTH] {line.strip()}")
+
+            if url_handled["done"]:
+                return True
+
+            url = extract_auth_url(line)
+            if not url:
+                return True
+
+            url_handled["done"] = True
+            debug_log("[AUTH] URL extracted and handled once")
+
+            if AUTH_MODE == 1:
+                debug_log("[AUTH] Opening URL in default browser")
+                webbrowser.open(url)
+
+            elif AUTH_MODE == 2:
+                debug_log("[AUTH] Showing GTK auth window")
+                show_auth_url_window(resource_name, url)
+
+            return False  # stop watching after URL is handled
+
+        GLib.io_add_watch(proc.stdout, GLib.IO_IN, on_io_ready)
+        GLib.io_add_watch(proc.stderr, GLib.IO_IN, on_io_ready)
+
+    except Exception as e:
+        debug_log(f"[AUTH:ERROR] {e}")
 
 
 # ==================================================

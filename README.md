@@ -1,4 +1,4 @@
-# Twingate Tray (Linux Mint)
+# Twingate Tray v0.3 (Linux Mint)
 
 A lightweight **system tray application** for Linux (Mint)  
 that provides **GUI control over Twingate CLI** and **resource authentication**
@@ -128,17 +128,65 @@ Displays:
 The window **auto-refreshes** while open.
 
 ---
+## 🔐 Resource authentication (AUTH handling)
+
+When a resource requires additional authentication, the command:
+
+```bash
+twingate auth <resource>
+```
+
+may return an **HTTPS authentication URL**.
+
+The tray application can handle this URL in three different ways,
+controlled by a constant in the source code:
+
+```python
+AUTH_MODE = 0 | 1 | 2
+```
+
+### AUTH_MODE options
+
+| Mode | Behavior |
+|------|----------|
+| `0` | Only executes `twingate auth` (no URL handling) |
+| `1` | Automatically opens the authentication URL in the default web browser |
+| `2` (default) | Displays a GTK window with the authentication URL |
+
+The URL is extracted directly from **stdout / stderr** of the running
+`twingate auth` process.
+
+Only the **first detected HTTPS URL** is handled.
+
+---
+
+## 🪟 Authentication URL window
+
+When `AUTH_MODE = 2`, a dedicated GTK window is displayed if authentication
+requires user interaction.
+
+The window contains:
+
+- Title: `Twingate Auth – <RESOURCE_NAME>`
+- Read-only text field with the authentication URL
+- Buttons:
+  - **Copy URL** – copies the URL to the system clipboard
+  - **Open URL** – opens the URL in the default web browser
+
+The window is shown once per authentication request.
+
+---
 
 ## 🧩 Tray icon & tooltip
 
 - Icons come from the system icon theme (freedesktop spec)
 - Tooltip text is set dynamically, e.g.:
   ```
-  Twingate Tray v0.1 — ONLINE
+  Twingate Tray v0.3 — ONLINE
   ```
 - Application title can be set via:
   ```python
-  indicator.set_title("Twingate Tray v0.1")
+  indicator.set_title("Twingate Tray v0.3")
   ```
 
 ---
